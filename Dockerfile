@@ -3,7 +3,7 @@
 # trust_remote_code files are baked in at build time so cold starts don't pull
 # from the Hub. Needs a GPU at runtime (nvidia-container-toolkit / a GPU host on
 # Coolify).
-FROM nvidia/cuda:12.4.1-runtime-ubuntu22.04
+FROM nvidia/cuda:12.1.1-runtime-ubuntu22.04
 
 ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONUNBUFFERED=1 \
@@ -21,10 +21,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
-# Torch matched to the CUDA 12.4 base (installed separately per the model card).
+# Torch matched to the CUDA 12.1 base. The deploy host (RTX 3060) maxes out at
+# CUDA 12.2, so we stay at/below it — a cu124 build hit CUDA error 804 there
+# (GeForce cards can't use forward compatibility).
 RUN pip3 install --no-cache-dir --upgrade pip \
     && pip3 install --no-cache-dir torch==2.5.1 torchvision==0.20.1 \
-        --index-url https://download.pytorch.org/whl/cu124
+        --index-url https://download.pytorch.org/whl/cu121
 
 # Python deps (cached unless requirements change).
 COPY requirements.txt ./
