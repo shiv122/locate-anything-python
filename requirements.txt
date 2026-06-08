@@ -1,0 +1,18 @@
+# Web server
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+httpx==0.28.1
+pydantic==2.10.4
+
+# Model stack — pins per the LocateAnything-3B model card.
+# torch + torchvision are installed in the Dockerfile (CUDA-matched wheels).
+transformers==4.57.1
+accelerate
+opencv-python-headless==4.11.0.86
+numpy==1.25.0
+Pillow==11.1.0
+peft
+decord==0.6.0
+lmdb==1.7.5
+einops
+qwen-vl-utils
