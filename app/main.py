@@ -93,6 +93,15 @@ def _load_model() -> None:
     processor = AutoProcessor.from_pretrained(MODEL_ID, trust_remote_code=True)
     model = AutoModel.from_pretrained(MODEL_ID, **kwargs).to(DEVICE).eval()
 
+    # The custom parallel-box generate() requires the KV cache, but the shipped
+    # config has use_cache=False ("Only use_cache=True is supported"). Force it.
+    try:
+        model.config.use_cache = True
+        if getattr(model, "generation_config", None) is not None:
+            model.generation_config.use_cache = True
+    except Exception:  # noqa: BLE001
+        pass
+
     _state.update(model=model, tokenizer=tokenizer, processor=processor)
 
 
@@ -299,6 +308,7 @@ def locate(req: LocateRequest):
                 max_new_tokens=max_new,
                 generation_mode=mode,
                 do_sample=bool(do_sample),
+                use_cache=True,   # required by the custom generate(); also forced on config at load
             )
             if "pixel_values" in inputs:
                 gen["pixel_values"] = inputs["pixel_values"].to(torch.bfloat16)
