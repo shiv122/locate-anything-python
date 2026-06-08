@@ -31,6 +31,10 @@ from fastapi.responses import JSONResponse
 from PIL import Image
 from pydantic import BaseModel
 
+# Set before torch initializes CUDA — lets the allocator reuse fragmented blocks
+# and avoid spurious OOMs on tight GPUs (the 12 GB RTX 3060 we deploy on).
+os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
+
 MODEL_ID = os.getenv("LOCATE_MODEL", "nvidia/LocateAnything-3B")
 DEVICE = os.getenv("LOCATE_DEVICE", "cuda")
 DEFAULT_MODE = os.getenv("GENERATION_MODE", "hybrid")
@@ -38,6 +42,10 @@ DEFAULT_MAX_NEW_TOKENS = int(os.getenv("MAX_NEW_TOKENS", "8192"))
 MAX_IMAGE_BYTES = int(os.getenv("MAX_IMAGE_BYTES", str(25 * 1024 * 1024)))
 DOWNLOAD_TIMEOUT = float(os.getenv("DOWNLOAD_TIMEOUT_SECONDS", "30"))
 ATTN_IMPL = os.getenv("ATTN_IMPLEMENTATION") or None
+# Downscale the longest image side to this before inference (0 = off). The model
+# returns coords normalized to [0,1000], so resizing doesn't change box geometry,
+# but it sharply cuts vision-activation memory on small GPUs. Demo uses ~1K.
+MAX_SIDE = int(os.getenv("LOCATE_MAX_SIDE", "1024"))
 
 # Default detection targets for the detector pipeline (brands / logos / text).
 # Used when a `detection` request arrives without an explicit `query`. Kept as an
@@ -281,9 +289,17 @@ def locate(req: LocateRequest):
         return JSONResponse(status_code=400, content={"error": f"invalid image: {e}"})
     w, h = image.size
 
+    # Downscale for inference to bound GPU memory; coords are normalized, so the
+    # parsed boxes still map onto the ORIGINAL w/h.
+    inf_image = image
+    if MAX_SIDE and max(w, h) > MAX_SIDE:
+        s = MAX_SIDE / max(w, h)
+        inf_image = image.resize((max(1, round(w * s)), max(1, round(h * s))), Image.LANCZOS)
+    iw, ih = inf_image.size
+
     model, tokenizer, processor = _state["model"], _state["tokenizer"], _state["processor"]
     messages = [{"role": "user", "content": [
-        {"type": "image", "image": image},
+        {"type": "image", "image": inf_image},
         {"type": "text", "text": prompt},
     ]}]
 
@@ -329,7 +345,7 @@ def locate(req: LocateRequest):
         "text": answer,
         "boxes": boxes,
         "points": points,
-        "image": {"width": w, "height": h},
+        "image": {"width": w, "height": h, "inference_width": iw, "inference_height": ih},
         "model": MODEL_ID,
         "mode": mode,
         "prompt": prompt,

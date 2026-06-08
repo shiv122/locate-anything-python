@@ -110,6 +110,7 @@ The detector will POST `{image_url, prompt | task+query}` to `/locate`.
 | `LOCATE_DEFAULT_QUERY` | `brands, logos, texts` | default `detection` targets when no `query` given |
 | `GENERATION_MODE` | `hybrid` | `fast` \| `slow` \| `hybrid` |
 | `MAX_NEW_TOKENS` | `8192` | generation cap |
+| `LOCATE_MAX_SIDE` | `1024` | downscale longest image side before inference (0 = off); **lower (768) if you hit CUDA OOM**, raise for sharper small-logo/text detection |
 | `ATTN_IMPLEMENTATION` | _(model default)_ | e.g. `sdpa`, `eager`, `flash_attention_2` |
 | `DOWNLOAD_TIMEOUT_SECONDS` | `30` | image fetch timeout |
 | `MAX_IMAGE_BYTES` | `26214400` | 25 MB fetch cap |
