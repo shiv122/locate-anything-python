@@ -38,7 +38,7 @@ os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
 MODEL_ID = os.getenv("LOCATE_MODEL", "nvidia/LocateAnything-3B")
 DEVICE = os.getenv("LOCATE_DEVICE", "cuda")
 DEFAULT_MODE = os.getenv("GENERATION_MODE", "hybrid")
-DEFAULT_MAX_NEW_TOKENS = int(os.getenv("MAX_NEW_TOKENS", "8192"))
+DEFAULT_MAX_NEW_TOKENS = int(os.getenv("MAX_NEW_TOKENS", "2048"))
 MAX_IMAGE_BYTES = int(os.getenv("MAX_IMAGE_BYTES", str(25 * 1024 * 1024)))
 DOWNLOAD_TIMEOUT = float(os.getenv("DOWNLOAD_TIMEOUT_SECONDS", "30"))
 ATTN_IMPL = os.getenv("ATTN_IMPLEMENTATION") or None
@@ -137,7 +137,7 @@ class LocateRequest(BaseModel):
     query: str | None = None        # categories/phrase to fill the template
     mode: str | None = None         # fast | slow | hybrid
     max_tokens: int | None = None
-    temperature: float = 0.0
+    temperature: float = 0.7         # card default; >0 enables sampling (greedy loops on this model)
     do_sample: bool | None = None    # default: sample only when temperature > 0
 
 
@@ -196,9 +196,11 @@ def _fetch_image(url: str) -> tuple[bytes | None, JSONResponse | None]:
 
 
 # <box> wraps either 4 ints (a box: x1,y1,x2,y2) or 2 ints (a point: x,y), each
-# in its own <int> tag, normalized to [0, 1000]. See the model card.
+# in its own <int> tag, normalized to [0, 1000]. The query is echoed in a leading
+# <ref>...</ref>. See the model card.
 _BOX_RE = re.compile(r"<box>(.*?)</box>", re.DOTALL)
 _INT_RE = re.compile(r"<(\d+)>")
+_REF_RE = re.compile(r"</?ref>")
 
 
 def _scale(v: int, dim: int) -> float:
@@ -207,20 +209,24 @@ def _scale(v: int, dim: int) -> float:
 
 def _parse_output(text: str, w: int, h: int) -> tuple[list, list]:
     boxes, points, last = [], [], 0
+    seen_b, seen_p = set(), set()
     for m in _BOX_RE.finditer(text):
         nums = [int(n) for n in _INT_RE.findall(m.group(1))]
-        # best-effort label: the trailing line of text the model emitted before this box
-        pre = text[last:m.start()].strip()
+        # best-effort label: trailing line before this box, minus <ref> wrappers
+        pre = _REF_RE.sub("", text[last:m.start()]).strip()
         label = pre.splitlines()[-1].strip(" :,.;-\t") if pre else ""
         last = m.end()
-        if len(nums) == 4:
+        key = tuple(nums)
+        if len(nums) == 4 and key not in seen_b:   # dedupe identical boxes (model can loop)
+            seen_b.add(key)
             x1, y1, x2, y2 = nums
             boxes.append({
                 "label": label or None,
                 "box_norm": [x1, y1, x2, y2],
                 "box": [_scale(x1, w), _scale(y1, h), _scale(x2, w), _scale(y2, h)],
             })
-        elif len(nums) == 2:
+        elif len(nums) == 2 and key not in seen_p:
+            seen_p.add(key)
             x, y = nums
             points.append({
                 "label": label or None,
