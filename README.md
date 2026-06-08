@@ -80,7 +80,7 @@ Requires a GPU host (`nvidia-container-toolkit`). The image bakes in the weights
 (~6 GB), so the first build is slow but cold starts only pay model-load time.
 
 ```bash
-# add --build-arg HF_TOKEN=hf_xxx if the repo turns out to be gated
+# the model repo is public — no HF token needed
 docker build -t locate-anything-service .
 docker run --gpus all -p 8080:8080 locate-anything-service
 
@@ -113,7 +113,6 @@ The detector will POST `{image_url, prompt | task+query}` to `/locate`.
 | `ATTN_IMPLEMENTATION` | _(model default)_ | e.g. `sdpa`, `eager`, `flash_attention_2` |
 | `DOWNLOAD_TIMEOUT_SECONDS` | `30` | image fetch timeout |
 | `MAX_IMAGE_BYTES` | `26214400` | 25 MB fetch cap |
-| `HF_TOKEN` | — | **build-time only**, for gated repos |
 
 ## Notes / things to confirm on first run
 
