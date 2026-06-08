@@ -46,6 +46,10 @@ ATTN_IMPL = os.getenv("ATTN_IMPLEMENTATION") or None
 # returns coords normalized to [0,1000], so resizing doesn't change box geometry,
 # but it sharply cuts vision-activation memory on small GPUs. Demo uses ~1K.
 MAX_SIDE = int(os.getenv("LOCATE_MAX_SIDE", "1024"))
+# Sampling defaults from NVIDIA's reference worker. repetition_penalty in
+# particular stops the parallel-box decoder from rambling/repeating boxes.
+DEFAULT_TOP_P = float(os.getenv("LOCATE_TOP_P", "0.9"))
+DEFAULT_REP_PENALTY = float(os.getenv("LOCATE_REPETITION_PENALTY", "1.1"))
 
 # Default detection targets for the detector pipeline (brands / logos / text).
 # Used when a `detection` request arrives without an explicit `query`. Kept as an
@@ -139,6 +143,8 @@ class LocateRequest(BaseModel):
     max_tokens: int | None = None
     temperature: float = 0.7         # card default; >0 enables sampling (greedy loops on this model)
     do_sample: bool | None = None    # default: sample only when temperature > 0
+    top_p: float | None = None       # nucleus sampling (default from env, 0.9)
+    repetition_penalty: float | None = None  # default from env, 1.1 — curbs box rambling
 
 
 @app.get("/health")
@@ -330,12 +336,14 @@ def locate(req: LocateRequest):
                 max_new_tokens=max_new,
                 generation_mode=mode,
                 do_sample=bool(do_sample),
+                repetition_penalty=(req.repetition_penalty if req.repetition_penalty is not None else DEFAULT_REP_PENALTY),
                 use_cache=True,   # required by the custom generate(); also forced on config at load
             )
             if "pixel_values" in inputs:
                 gen["pixel_values"] = inputs["pixel_values"].to(torch.bfloat16)
             if do_sample:
                 gen["temperature"] = req.temperature or 0.7
+                gen["top_p"] = req.top_p if req.top_p is not None else DEFAULT_TOP_P
 
             with torch.inference_mode():
                 response = model.generate(**gen)

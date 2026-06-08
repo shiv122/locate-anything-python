@@ -111,6 +111,8 @@ The detector will POST `{image_url, prompt | task+query}` to `/locate`.
 | `GENERATION_MODE` | `hybrid` | `fast` \| `slow` \| `hybrid` |
 | `MAX_NEW_TOKENS` | `2048` | generation cap (plenty for detection; raise for dense OCR) |
 | `LOCATE_MAX_SIDE` | `1024` | downscale longest image side before inference (0 = off); **lower (768) if you hit CUDA OOM**, raise for sharper small-logo/text detection |
+| `LOCATE_TOP_P` | `0.9` | nucleus sampling top-p (NVIDIA reference default) |
+| `LOCATE_REPETITION_PENALTY` | `1.1` | >1 curbs box rambling/repetition (NVIDIA reference default) |
 | `ATTN_IMPLEMENTATION` | _(model default)_ | e.g. `sdpa`, `eager`, `flash_attention_2` |
 | `DOWNLOAD_TIMEOUT_SECONDS` | `30` | image fetch timeout |
 | `MAX_IMAGE_BYTES` | `26214400` | 25 MB fetch cap |
