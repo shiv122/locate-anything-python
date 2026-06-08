@@ -39,17 +39,41 @@ MAX_IMAGE_BYTES = int(os.getenv("MAX_IMAGE_BYTES", str(25 * 1024 * 1024)))
 DOWNLOAD_TIMEOUT = float(os.getenv("DOWNLOAD_TIMEOUT_SECONDS", "30"))
 ATTN_IMPL = os.getenv("ATTN_IMPLEMENTATION") or None
 
-# Prompt templates straight from the model card. Pick one via `task` and fill it
-# with `query`; or send a fully-formed `prompt` to bypass these entirely.
-TEMPLATES = {
-    "detect": "Locate all instances matching: {q}",
-    "ground": "Locate a single instance: {q}",
-    "ground_multi": "Locate all instances: {q}",
-    "text": "Please locate the text: {q}",
-    "scene_text": "Detect all text in box format",
-    "gui_box": "Locate the region: {q}",
-    "gui_point": "Point to: {q}",
+# Default detection targets for the detector pipeline (brands / logos / text).
+# Used when a `detection` request arrives without an explicit `query`. Kept as an
+# env var rather than a hardcoded constant so it stays a tunable.
+DEFAULT_QUERY = os.getenv("LOCATE_DEFAULT_QUERY", "brands, logos, texts")
+
+# Task types mirror the official LocateAnything demo dropdown:
+#   detection · grounding · ocr · gui · pointing
+# `query` is the comma-separated target(s) / phrase typed into the demo's search
+# bar; each task maps to a prompt template from the model card.
+TASKS = ("detection", "grounding", "ocr", "gui", "pointing")
+
+# Forgiving aliases -> canonical task name.
+TASK_ALIASES = {
+    "detect": "detection",
+    "ground": "grounding",
+    "ground_multi": "grounding",
+    "phrase": "grounding",
+    "text": "ocr",
+    "scene_text": "ocr",
+    "gui_box": "gui",
+    "point": "pointing",
+    "gui_point": "pointing",
 }
+
+
+def _prompt_for(task: str, query: str) -> str:
+    if task == "grounding":
+        return f"Locate all instances: {query}"
+    if task == "ocr":
+        return f"Please locate the text: {query}" if query else "Detect all text in box format"
+    if task == "gui":
+        return f"Locate the region: {query}"
+    if task == "pointing":
+        return f"Point to: {query}"
+    return f"Locate all instances matching: {query}"  # detection (default)
 
 # Loaded once on startup (lifespan); inference is serialized because a single
 # in-process GPU model is not safe to call from multiple threads at once.
@@ -92,7 +116,7 @@ app = FastAPI(title="LocateAnything Service", version="1.0.0", lifespan=lifespan
 class LocateRequest(BaseModel):
     image_url: str
     prompt: str | None = None       # full instruction; takes precedence over task/query
-    task: str | None = None         # one of TEMPLATES (default: detect)
+    task: str | None = None         # detection | grounding | ocr | gui | pointing (default: detection)
     query: str | None = None        # categories/phrase to fill the template
     mode: str | None = None         # fast | slow | hybrid
     max_tokens: int | None = None
@@ -103,7 +127,10 @@ class LocateRequest(BaseModel):
 @app.get("/health")
 def health():
     if _state["ready"]:
-        return {"status": "ok", "model": MODEL_ID, "device": DEVICE}
+        return {
+            "status": "ok", "model": MODEL_ID, "device": DEVICE,
+            "tasks": list(TASKS), "default_query": DEFAULT_QUERY,
+        }
     return JSONResponse(
         status_code=503,
         content={
@@ -117,11 +144,15 @@ def health():
 def _build_prompt(req: LocateRequest) -> str | None:
     if req.prompt:
         return req.prompt
-    task = (req.task or "detect").lower()
-    if req.query is None and task != "scene_text":
-        return None
-    tmpl = TEMPLATES.get(task, TEMPLATES["detect"])
-    return tmpl.format(q=(req.query or "").strip())
+    task = TASK_ALIASES.get((req.task or "detection").lower(), (req.task or "detection").lower())
+    query = (req.query or "").strip()
+    if task == "detection" and not query:
+        query = DEFAULT_QUERY          # detector default: brands, logos, texts
+    if task == "ocr":
+        return _prompt_for("ocr", query)   # query optional -> "Detect all text in box format"
+    if not query:
+        return None                    # grounding / gui / pointing need a target
+    return _prompt_for(task, query)
 
 
 def _fetch_image(url: str) -> tuple[bytes | None, JSONResponse | None]:

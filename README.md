@@ -31,7 +31,7 @@ template from the model card):
 ```
 or
 ```json
-{ "image_url": "https://.../frame.jpg", "task": "detect", "query": "person, ball" }
+{ "image_url": "https://.../frame.jpg", "task": "detection", "query": "brands, logos, texts" }
 ```
 
 Response:
@@ -56,16 +56,17 @@ Response:
 
 Errors return `{ "error": "..." }` with a 4xx/5xx status.
 
-### Tasks (`task` field)
-| task | template |
-|------|----------|
-| `detect` (default) | `Locate all instances matching: {query}` |
-| `ground` | `Locate a single instance: {query}` |
-| `ground_multi` | `Locate all instances: {query}` |
-| `text` | `Please locate the text: {query}` |
-| `scene_text` | `Detect all text in box format` |
-| `gui_box` | `Locate the region: {query}` |
-| `gui_point` | `Point to: {query}` (returns points, not boxes) |
+### Tasks (`task` field — mirrors the official demo dropdown)
+| task | template | `query` |
+|------|----------|---------|
+| `detection` (default) | `Locate all instances matching: {query}` | comma-separated categories (defaults to **`brands, logos, texts`**) |
+| `grounding` | `Locate all instances: {query}` | a phrase / referring expression |
+| `ocr` | `Please locate the text: {query}` — or `Detect all text in box format` if no query | text to find (optional) |
+| `gui` | `Locate the region: {query}` | UI element description |
+| `pointing` | `Point to: {query}` (returns points, not boxes) | target description |
+
+`query` is the comma-separated target(s) from the demo's search bar (English &
+Chinese). Aliases like `detect` / `ground` / `point` / `scene_text` also resolve.
 
 ### `GET /health`
 ```json
@@ -106,6 +107,7 @@ The detector will POST `{image_url, prompt | task+query}` to `/locate`.
 | `PORT` | `8080` | FastAPI listen port |
 | `LOCATE_MODEL` | `nvidia/LocateAnything-3B` | HF repo id or local path (baked in) |
 | `LOCATE_DEVICE` | `cuda` | torch device |
+| `LOCATE_DEFAULT_QUERY` | `brands, logos, texts` | default `detection` targets when no `query` given |
 | `GENERATION_MODE` | `hybrid` | `fast` \| `slow` \| `hybrid` |
 | `MAX_NEW_TOKENS` | `8192` | generation cap |
 | `ATTN_IMPLEMENTATION` | _(model default)_ | e.g. `sdpa`, `eager`, `flash_attention_2` |
